@@ -1,0 +1,79 @@
+public with sharing class MaintenanceRequestHelper {
+    
+    public static void updateWorkOrders(List <Case> caseList, Map <Id, Case> oldMap) {
+        // TODO: Complete the method to update workorders
+        Set<Id> changedCaseList = new Set <Id>();
+        Set<Id> changedEpqList = new Set <Id>();
+        Integer minKey = 0;
+        for (Case cs: caseList){
+            if((cs.Type == 'Repair' || cs.Type == 'Routine Maintenance') && 
+               cs.Status == 'Closed' && cs.Status != oldMap.get(cs.Id).Status ){
+                   // Set of closed Ids for Routine Maintenance
+                   changedCaseList.add(cs.Id);
+               }
+        }
+        if(!changedCaseList.isEmpty()){ 
+            //List of Equipment Maintenance Items associated with above Set
+            List<Equipment_Maintenance_Item__c> epqList = new List <Equipment_Maintenance_Item__c>([select Id, 
+                                                                                                    Maintenance_Request__c, 
+                                                                                                    Equipment__c,
+                                                                                                    Quantity__c
+                                                                                                    from 
+                                                                                                    Equipment_Maintenance_Item__c 
+                                                                                                    where  
+                                                                                                    Maintenance_Request__c IN : changedCaseList]);
+            if(!epqList.isEmpty()){
+                for(Equipment_Maintenance_Item__c epqItem: epqList){
+                    changedEpqList.add(epqItem.Equipment__c);
+                }
+                if(!changedEpqList.isEmpty()){
+                    List<Product2> prdList = new List<Product2>([select Id,
+                                                                 Maintenance_Cycle__c
+                                                                 from Product2 where
+                                                                 id IN:changedEpqList]);
+                    //Calculate Mininum cycle
+                    minKey = getMininumCycle(prdList);
+                    //Calculate Due Date
+                    Date dueDate = system.today().addDays(minKey);
+                    system.debug('Mininum Cycle Found: '+minKey);
+                    system.debug('Shortest Date from today: '+dueDate.format());
+                    
+                    List <Case> listCase = new List<Case>();
+                    List <Equipment_Maintenance_Item__c> listERec = new List<Equipment_Maintenance_Item__c>();
+                     Case newcase;
+                    for(Case cclist: caseList){
+                        newcase = new Case();
+                        newcase.Date_Due__c =dueDate;
+                        newcase.Type = 'Routine Maintenance';
+                        newcase.Vehicle__c = cclist.Vehicle__c;
+                        newcase.Origin = cclist.Origin;                        
+                        newcase.Subject = 'Automated Routine Maintenance';
+                        newcase.Date_Reported__c = system.today();
+                        listCase.add(newcase);
+                    }
+                    insert listCase;
+                        List<Case> changedCase = new List <Case>([select Id, Maintenance_Request__c from case where Id IN : changedCaseList]);
+                        for(case listcases: changedCase){
+                            listcases.Maintenance_Request__c = newcase.Id;
+                        }
+                        update changedCase;
+                        for(Equipment_Maintenance_Item__c lstEQ: epqList){
+                            Equipment_Maintenance_Item__c newEqp = new Equipment_Maintenance_Item__c();
+                            newEqp.Maintenance_Request__c = newcase.Id;
+                            newEqp.Equipment__c  = lstEQ.Equipment__c;
+                            newEqp.Quantity__c = lstEQ.Quantity__c;
+                            listERec.add(newEqp);
+                        }
+                        insert listERec;
+                }
+            }
+        }
+    }
+    public static Integer getMininumCycle(List <Product2> prdList){
+        Integer minValue = 0;
+        for (Product2 pd: prdList){
+            minValue = pd.Maintenance_Cycle__c.intValue() > 0 ? pd.Maintenance_Cycle__c.intValue() : minValue; 
+        }
+        return minValue;
+    }
+}
