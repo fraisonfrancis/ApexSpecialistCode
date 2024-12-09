@@ -17,13 +17,39 @@ public with sharing class MaintenanceRequestHelperTest {
         system.debug('myCaseIds Size: '+myCaseIds.size());
         // Verify whether any new Maintenance request got created for the parent request
         
-        List<Case> newCaselist = new List <Case> ([select Id from Case where subject = 'Automated Test Cases 123']);
-        
-        if(!newCaselist.IsEmpty()){
-            List<Equipment_Maintenance_Item__c> epqList= new List <Equipment_Maintenance_Item__c>([select Id, Equipment__c from Equipment_Maintenance_Item__c 
-                                                                                                   where Maintenance_Request__c IN : newCaselist]);
-            System.debug('Epq Record: '+epqList.size());          
+        List<Case> newCaselist = new List <Case> ([select Id,type,Date_Due__c from Case where subject = 'Automated Test Cases 123'
+                                                   AND type = 'Routine Maintenance']);
+        System.debug('newCaselist: '+newCaselist.size());
+        List<Equipment_Maintenance_Item__c> epqList;
+        Set <Id> prodSet = new Set <Id>();
+        List <Product2> prdList;
+        if(!newCaselist.isEmpty()){
+            for(Case newlistCase: newCaselist){
+                System.assertEquals(10,newCaselist.size(),'10 Routine Maintenance records should be returned');
+                System.assertEquals(true,newlistCase.Date_Due__c !=null,'Due Date should be populated');
+                epqList = new List <Equipment_Maintenance_Item__c>([select Id, Equipment__c,Quantity__c
+                                                                    from Equipment_Maintenance_Item__c 
+                                                                    where Maintenance_Request__c IN : myCaseIds]);
+                for(Equipment_Maintenance_Item__c EqMain: epqList){
+                    System.assertEquals(true,EqMain.Equipment__c!=null,'equipment must be populated');
+                    prodSet.add(EqMain.Equipment__c);
+                }
+                getMininumCycleTest(prodSet);
+
+            }
         }
+
+    }
+    public static void getMininumCycleTest(Set <Id> idProdSet){
+        List<Product2> prdList = new List<Product2>([select Id,
+                                                     Maintenance_Cycle__c
+                                                     from Product2 where
+                                                     id IN:idProdSet]);
+        for(Product2 listRec: prdList){
+            System.assertEquals(true,listRec.Maintenance_Cycle__c.intValue() > 0 && listRec.Maintenance_Cycle__c.intValue() == 5,'Maintenance Cycle value must be 5');
+        }
+        
+        
     }
     public static List<Case> CreateTestCases(){
         
@@ -36,52 +62,39 @@ public with sharing class MaintenanceRequestHelperTest {
         List<Equipment_Maintenance_Item__c> epqRecList = new List<Equipment_Maintenance_Item__c>();
         Equipment_Maintenance_Item__c newEpRec;
         
-        for(Integer i=0; i<400;i++){
+        for(Integer i=0; i<10;i++){
             newCase = new Case();
             newCase.Origin = 'Web';
             newCase.Date_Reported__c = system.today(); 
             newCase.Comments= 'Created for testing from Test class';
             newCase.Subject = 'Automated Test Cases 123';
-            if(i<=200){
-                newCase.Status = 'New';
-                newCase.Type = 'Repair';
-            }else{
-                newCase.Status = 'Working';
-                newCase.Type = 'Mechanical';
-            }
-            
+            newCase.Status = 'New';
+            newCase.Type = 'Repair';
             caseList.add(newCase);
-        }        
-        insert caseList;
-        
-        system.debug('Cases were created here');
-        
-        for(Integer y=0; y<10;y++){
+            
             newProduct = new Product2();
             newProduct.Replacement_Part__c = true;
-            newProduct.Name = 'Test Product '+y;
-            newProduct.Maintenance_Cycle__c = 2+y*5;
+            newProduct.Name = 'Test Product';
+            newProduct.Maintenance_Cycle__c = 5;
             newPrdList.add(newProduct);
-        }
+ 
+        } 
         insert newPrdList;
-        system.debug('Products were created here');
-        
-        integer ct=0;
-        for(Integer z=0; z<400;z++){
-            if(caseList[z].Maintenance_Request__c != null){
-                newEpRec = new Equipment_Maintenance_Item__c();
-                newEpRec.Maintenance_Request__c = caseList[z].Maintenance_Request__c;
-                for(Integer a=0; a<5;a++){
-                    ct = ct==10? ct=0: ct;
-                    newEpRec.Equipment__c = newPrdList[ct].Id; 
-                    ct++;
-                }            
-                newEpRec.Quantity__c = Integer.valueof((Math.random() * 100));
-                epqRecList.add(newEpRec);
-            }
+        system.debug('Products were created here');         
+        insert caseList;
+        system.debug('Cases were created here');        
+        for(Integer z=0; z<3;z++){
+            newEpRec = new Equipment_Maintenance_Item__c();
+            newEpRec.Maintenance_Request__c =newCase.Id;
+            newEpRec.Equipment__c = newProduct.Id;
+            newEpRec.Quantity__c = 5*z+1;
+            epqRecList.add(newEpRec);
+            system.debug('epqRecList List : '+epqRecList);
         }
+        
         insert epqRecList;
         system.debug('Eqipment Records were created here');
+
         return caseList;
     }
     
